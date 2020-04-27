@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,height=device-height,initial-scale=1">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <title>CryptoZombies front-end</title>
+  <link href="https://cryptozombies.io/course/static/css/app.aad872eb3d49015b8002bc7ecf65b372.css" rel="stylesheet">
+  <script language="javascript" type="text/javascript"
+    src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+  <script language="javascript" type="text/javascript" src="web3.min.js"></script>
+  <script language="javascript" type="text/javascript" src="cryptozombies_abi.js"></script>
+</head>
+
+<body>
+  <div id="txStatus"></div>
+  <div id="zombies"></div>
+  <div id="zombie-cards" class="d-flex flex-row flex-wrap justify-content-around" data-v-ae5586a2=""></div>
+  <div class="section">
+    createRandomZombie: <input type="text" id="confName" />
+      <button id="createRandomZombie">Create</button>
+      <span id="createResult"></span>
+  </div>
+
+  <div class="section">
+    feedOnKitty: <input type="text" id="confZombieId" />
+	<input type="text" id="confKittyId" />
+      <button id="feedOnKitty">feedOnKitty</button>
+      <span id="feedOnKittyResult"></span>
+  </div>
+  
+  <div class="section">
+    levelUp: <input type="text" id="confLevelZombieId" />
+	<button id="levelUp">levelUp</button>
+      <span id="levelUpResult"></span>
+  </div>
+  
+  <div class="section">
+    transfer: <input type="text" id="confTransferToAddr" />
+	<input type="text" id="confTransferZombieId" />
+      <button id="transfer">transfer</button>
+      <span id="transferResult"></span>
+  </div>
+  
+  <div class="section">
+    approve: <input type="text" id="confApproveToAddr" />
+	<input type="text" id="confApproveZombieId" />
+      <button id="approve">approve</button>
+      <span id="approveResult"></span>
+  </div>
+  
+  <div class="section">
+    takeOwnership: <input type="text" id="confTakeOwnershipZombieId" />
+      <button id="takeOwnership">takeOwnership</button>
+      <span id="takeOwnershipResult"></span>
+  </div>
+  
+  <div class="section">
+    attack: <input type="text" id="confAttackZombieId" />
+	<input type="text" id="confAttackTargetId" />
+      <button id="attack">attack</button>
+      <span id="attackResult"></span>
+  </div>
+
+  <div class="section" style="display: none;">
+    getZombieId: <button id="getZombieId">getZombieId</button>
+      <span id="getZombieIdResult"></span>
+  </div>
+		
+  <script>
+    var cryptoZombies;
+    var userAccount;
+
+    function startApp() {
+      var cryptoZombiesAddress = "0x3094E17e157227dd3dC04F357F80e81BaBa31Ddf";
+      cryptoZombies = new web3js.eth.Contract(cryptoZombiesABI, cryptoZombiesAddress);
+
+      var accountInterval = setInterval(function () {
+
+		  web3js.eth.getAccounts(function(err, accs) {
+				if (err != null) {
+					alert("There was an error fetching your accounts.");
+					return;
+				}
+
+				if (accs.length == 0) {
+					alert("Couldn't get any accounts! Make sure your Ethereum client is configured correctly.");
+					return;
+				}
+				if (accs[0] !== userAccount) {
+				  userAccount = accs[0];
+
+				  getZombiesByOwner(userAccount)
+					.then(displayZombies);
+				}
+			});
+		
+        
+      }, 100);
+
+      cryptoZombies.events.Transfer({ filter: { _to: userAccount } })
+        .on("data", function (event) {
+          let data = event.returnValues;
+          getZombiesByOwner(userAccount).then(displayZombies);
+        }).on("error", console.error);
+		
+		$("#createRandomZombie").click(function() {
+			var newName = $("#confName").val();
+			createRandomZombie(newName);
+		});
+		
+		$("#feedOnKitty").click(function() {
+			var zombieId = $("#confZombieId").val();
+			var kittyId = $("#confKittyId").val();
+			feedOnKitty(zombieId, kittyId);
+		});
+		
+		$("#levelUp").click(function() {
+			var zombieId = $("#confLevelZombieId").val();
+			levelUp(zombieId);
+		});
+		
+		$("#getZombieId").click(function(){
+			var zombieId = selectedZombieId();
+			$("#txStatus").text("zombieId=" + zombieId);
+			console.log(zombieId);
+		});
+		
+		$("#transfer").click(function() {
+			var zombieId = $("#confTransferZombieId").val();
+			var toAddr = $("#confTransferToAddr").val();
+			transfer(toAddr, zombieId);
+		});
+		
+		$("#approve").click(function() {
+			var zombieId = $("#confApproveZombieId").val();
+			var toAddr = $("#confApproveToAddr").val();
+			approve(toAddr, zombieId);
+		});
+		
+		$("#takeOwnership").click(function() {
+			var zombieId = $("#confTakeOwnershipZombieId").val();
+			takeOwnership(zombieId);
+		});
+		
+		$("#attack").click(function() {
+			var zombieId = $("#confAttackZombieId").val();
+			var targetId = $("#confAttackTargetId").val();
+			attack(zombieId, targetId);
+		});
+		
+    }
+
+	function selectedZombieId() {
+		return $(".selected").attr("zombie-id");
+	}
+	
+    function displayZombies(ids) {
+      $("#zombies").empty();
+	  $("#zombie-cards").empty();
+      for (id of ids) {
+		let zombieId = id
+        getZombieDetails(id).then(function (zombie) {
+			
+            $("#zombies").append(`<div class="zombie">
+              <ul>
+			    <li>Id: ${zombieId}</li>
+                <li>Name: ${zombie.name}</li>
+                <li>DNA: ${zombie.dna}</li>
+                <li>Level: ${zombie.level}</li>
+                <li>Wins: ${zombie.winCount}</li>
+                <li>Losses: ${zombie.lossCount}</li>
+                <li>Ready Time: ${zombie.readyTime}</li>
+              </ul>
+            </div>`);
+			
+			
+			const currentHead = parseInt(zombie.dna.substring(0, 2)) % 7 + 1;
+			const currentEye = parseInt(zombie.dna.substring(2, 4)) % 11 + 1;
+			const currentShirt = parseInt(zombie.dna.substring(4, 6)) % 6 + 1;
+			const currentSkinColor = parseInt(zombie.dna.substring(6, 8)) / 100 * 360;
+			const currentEyeColor = parseInt(zombie.dna.substring(8, 10)) / 100 * 360;
+			const currentClothesColor = parseInt(zombie.dna.substring(10, 12)) / 100 * 360;
+			const catMode = zombie.dna.substring(14, 16) === '99';
+			noneCatModeVShow = (catMode)?' display: none;':'';
+			catModeVShow = (!catMode)?' display: none;':'';
+			
+	  
+			$("#zombie-cards").append(`<div class="game-card home-card selectable" data-v-ae5586a2="" zombie-id="${zombieId}">
+		<div class="zombie-char" data-v-ae5586a2="" data-v-3614808b="">
+			<div class="zombie-parts head-visible-${currentHead} eye-visible-${currentEye} shirt-visible-${currentShirt}" style="" data-v-3614808b="">
+				<img data-v-3614808b="" src="img/left-feet-1@2x.png" class="left-feet" style="filter: hue-rotate(${currentClothesColor}deg);${noneCatModeVShow}">
+				<img data-v-3614808b="" src="img/right-feet-1@2x.png" class="right-feet" style="filter: hue-rotate(${currentClothesColor}deg);${noneCatModeVShow}">
+				<img data-v-3614808b="" src="img/left-leg-1@2x.png" class="left-leg" style="filter: hue-rotate(${currentClothesColor}deg);${noneCatModeVShow}">
+				<img data-v-3614808b="" src="img/right-leg-1@2x.png" class="right-leg" style="filter: hue-rotate(${currentClothesColor}deg);${noneCatModeVShow}">
+				<img data-v-3614808b="" src="img/left-thigh-1@2x.png" class="left-thigh" style="filter: hue-rotate(${currentClothesColor}deg);${noneCatModeVShow}">
+				<img data-v-3614808b="" src="img/right-thigh-1@2x.png" class="right-thigh" style="filter: hue-rotate(${currentClothesColor}deg);${noneCatModeVShow}">
+				<img data-v-3614808b="" src="img/left-forearm-1@2x.png" class="left-forearm" style="filter: hue-rotate(${currentSkinColor}deg);">
+				<img data-v-3614808b="" src="img/right-forearm-1@2x.png" class="right-forearm" style="filter: hue-rotate(${currentSkinColor}deg);">
+				<img data-v-3614808b="" src="img/right-upper-arm-1@2x.png" class="right-upper-arm" style="filter: hue-rotate(${currentSkinColor}deg);">
+				<img data-v-3614808b="" src="img/torso-1@2x.png" class="torso" style="filter: hue-rotate(${currentClothesColor}deg);">
+				<img data-v-3614808b="" src="img/catlegs.png" class="cat-legs" style="filter: hue-rotate(${currentClothesColor}deg);${catModeVShow}">
+				<img data-v-3614808b="" src="img/shirt-1@2x.png" class="shirt shirt-part-1" style="filter: hue-rotate(${currentClothesColor}deg);">
+				<img data-v-3614808b="" src="img/shirt-2@2x.png" class="shirt shirt-part-2" style="filter: hue-rotate(${currentClothesColor}deg);">
+				<img data-v-3614808b="" src="img/shirt-3@2x.png" class="shirt shirt-part-3" style="filter: hue-rotate(${currentClothesColor}deg);">
+				<img data-v-3614808b="" src="img/shirt-4@2x.png" class="shirt shirt-part-4" style="filter: hue-rotate(${currentClothesColor}deg);">
+				<img data-v-3614808b="" src="img/shirt-5@2x.png" class="shirt shirt-part-5" style="filter: hue-rotate(${currentClothesColor}deg);">
+				<img data-v-3614808b="" src="img/shirt-6@2x.png" class="shirt shirt-part-6" style="filter: hue-rotate(${currentClothesColor}deg);">
+				<img data-v-3614808b="" src="img/left-upper-arm-1@2x.png" class="left-upper-arm" style="filter: hue-rotate(${currentSkinColor}deg);">
+				<img data-v-3614808b="" src="img/hand1-1@2x.png" class="left-hand" style="filter: hue-rotate(${currentSkinColor}deg);">
+				<img data-v-3614808b="" src="img/hand-2-1@2x.png" class="right-hand" style="filter: hue-rotate(${currentSkinColor}deg);">
+				<img data-v-3614808b="" src="img/head-1@2x.png" class="head head-part-1" style="filter: hue-rotate(${currentSkinColor}deg);">
+				<img data-v-3614808b="" src="img/head-2@2x.png" class="head head-part-2" style="filter: hue-rotate(${currentSkinColor}deg);">
+				<img data-v-3614808b="" src="img/head-3@2x.png" class="head head-part-3" style="filter: hue-rotate(${currentSkinColor}deg);">
+				<img data-v-3614808b="" src="img/head-4@2x.png" class="head head-part-4" style="filter: hue-rotate(${currentSkinColor}deg);">
+				<img data-v-3614808b="" src="img/head-5@2x.png" class="head head-part-5" style="filter: hue-rotate(${currentSkinColor}deg);">
+				<img data-v-3614808b="" src="img/head-6@2x.png" class="head head-part-6" style="filter: hue-rotate(${currentSkinColor}deg);">
+				<img data-v-3614808b="" src="img/head-7@2x.png" class="head head-part-7" style="filter: hue-rotate(${currentSkinColor}deg);">
+				<img data-v-3614808b="" src="img/head-8@2x.png" class="head head-part-8" style="filter: hue-rotate(${currentSkinColor}deg);">
+				<img data-v-3614808b="" src="img/eyes-1@2x.png" class="eye eye-part-1" style="filter: hue-rotate(${currentEyeColor}deg);">
+				<img data-v-3614808b="" src="img/eyes-2@2x.png" class="eye eye-part-2" style="filter: hue-rotate(${currentEyeColor}deg);">
+				<img data-v-3614808b="" src="img/eyes-3@2x.png" class="eye eye-part-3" style="filter: hue-rotate(${currentEyeColor}deg);">
+				<img data-v-3614808b="" src="img/eyes-4@2x.png" class="eye eye-part-4" style="filter: hue-rotate(${currentEyeColor}deg);">
+				<img data-v-3614808b="" src="img/eyes-5@2x.png" class="eye eye-part-5" style="filter: hue-rotate(${currentEyeColor}deg);">
+				<img data-v-3614808b="" src="img/eyes-6@2x.png" class="eye eye-part-6" style="filter: hue-rotate(${currentEyeColor}deg);">
+				<img data-v-3614808b="" src="img/eyes-7@2x.png" class="eye eye-part-7" style="filter: hue-rotate(${currentEyeColor}deg);">
+				<img data-v-3614808b="" src="img/eyes-8@2x.png" class="eye eye-part-8" style="filter: hue-rotate(${currentEyeColor}deg);">
+				<img data-v-3614808b="" src="img/eyes-9@2x.png" class="eye eye-part-9" style="filter: hue-rotate(${currentEyeColor}deg);">
+				<img data-v-3614808b="" src="img/eyes-10@2x.png" class="eye eye-part-10" style="filter: hue-rotate(${currentEyeColor}deg);">
+				<img data-v-3614808b="" src="img/eyes-11@2x.png" class="eye eye-part-11" style="filter: hue-rotate(${currentEyeColor}deg);">
+				<img data-v-3614808b="" src="img/mouth-1@2x.png" class="mouth">
+			</div>
+			<div class="zombie-card card bg-shaded" data-v-3614808b="">
+				<div class="card-header bg-dark hide-overflow-text" data-v-3614808b="">
+					<strong data-v-3614808b="">${zombie.name}</strong>
+				</div>
+				<small class="hide-overflow-text" data-v-3614808b="">${zombie.level}级</small>
+			</div>
+		</div>
+	</div>`);
+          });
+      }
+	  
+		 $("#zombie-cards").on("click",".selectable",function() {
+		        $(this).siblings('div').removeClass('selected');
+		        $(this).addClass('selected');
+				var zombieId = $(this).attr("zombie-id");
+				$("#confZombieId").val(zombieId);
+				$("#confLevelZombieId").val(zombieId);
+				$("#confTransferZombieId").val(zombieId);
+				$("#confApproveZombieId").val(zombieId);
+				$("#confAttackZombieId").val(zombieId);
+		    });
+    }
+
+    function createRandomZombie(name) {
+
+
+      $("#txStatus").text("Creating new zombie on the blockchain. This may take a while...");
+
+      return cryptoZombies.methods.createRandomZombie(name)
+        .send({ from: userAccount })
+        .on("receipt", function (receipt) {
+          $("#txStatus").text("Successfully created " + name + "!");
+
+          getZombiesByOwner(userAccount).then(displayZombies);
+        })
+        .on("error", function (error) {
+
+          $("#txStatus").text(JSON.stringify(error));
+        });
+    }
+
+    function feedOnKitty(zombieId, kittyId) {
+      $("#txStatus").text("Eating a kitty. This may take a while...");
+      return cryptoZombies.methods.feedOnKitty(zombieId, kittyId)
+        .send({ from: userAccount })
+        .on("receipt", function (receipt) {
+          $("#txStatus").text("Ate a kitty and spawned a new Zombie!");
+          getZombiesByOwner(userAccount).then(displayZombies);
+        })
+        .on("error", function (error) {
+          $("#txStatus").text(error);
+        });
+    }
+
+    function levelUp(zombieId) {
+      $("#txStatus").text("Leveling up your zombie...");
+      return cryptoZombies.methods.levelUp(zombieId)
+        .send({ from: userAccount, value: web3js.utils.toWei("0.001", "ether") })
+        .on("receipt", function (receipt) {
+          $("#txStatus").text("Power overwhelming! Zombie successfully leveled up");
+		  getZombiesByOwner(userAccount).then(displayZombies);
+        })
+        .on("error", function (error) {
+          $("#txStatus").text(error);
+        });
+    }
+
+    function getZombieDetails(id) {
+      return cryptoZombies.methods.zombies(id).call()
+    }
+
+    function zombieToOwner(id) {
+      return cryptoZombies.methods.zombieToOwner(id).call()
+    }
+
+    function getZombiesByOwner(owner) {
+      return cryptoZombies.methods.getZombiesByOwner(owner).call()
+    }
+
+	function attack(zombieId, targetId) {
+	$("#txStatus").text("Attack enemyZombie...");
+      return cryptoZombies.methods.attack(zombieId,targetId)
+	  .send({ from: userAccount })
+        .on("receipt", function (receipt) {
+          $("#txStatus").text("Successfully Attack to " + targetId + "!");
+
+        })
+        .on("error", function (error) {
+
+          $("#txStatus").text(JSON.stringify(error));
+        });
+	}
+	
+	function transfer(to,id) {
+	  $("#txStatus").text("Transfer up your zombie...");
+      return cryptoZombies.methods.transfer(to,id)
+	  .send({ from: userAccount })
+        .on("receipt", function (receipt) {
+          $("#txStatus").text("Successfully transfer to" + to + "!");
+
+          getZombiesByOwner(userAccount).then(displayZombies);
+        })
+        .on("error", function (error) {
+
+          $("#txStatus").text(JSON.stringify(error));
+        });
+    }
+
+	function approve(to,id) {
+	  $("#txStatus").text("Approve up your zombie...");
+      return cryptoZombies.methods.approve(to,id)
+	  .send({ from: userAccount })
+        .on("receipt", function (receipt) {
+          $("#txStatus").text("Successfully approve to " + to + "!");
+
+        })
+        .on("error", function (error) {
+
+          $("#txStatus").text(JSON.stringify(error));
+        });
+    }
+	
+	function takeOwnership(id) {
+	  $("#txStatus").text("TakeOwnership the zombie...");
+      return cryptoZombies.methods.takeOwnership(id)
+	  .send({ from: userAccount })
+        .on("receipt", function (receipt) {
+          $("#txStatus").text("Successfully takeOwnership zombie " + id + "!");
+        })
+        .on("error", function (error) {
+
+          $("#txStatus").text(JSON.stringify(error));
+        });
+    }
+		
+    window.addEventListener('load', async function () {
+
+
+      // Modern dapp browsers...
+		if (window.ethereum) {
+			web3js = new Web3(ethereum);
+			try {
+				// Request account access if needed
+				await ethereum.enable();
+				
+			} catch (error) {
+				// User denied account access...
+				console.log('User denied account access...');
+			}
+		}
+		// Legacy dapp browsers...
+		else if (window.web3) {
+			console.warn("Using web3 detected from external source. If you find that your accounts don't appear or you have 0 MetaCoin, ensure you've configured that source properly. If using MetaMask, see the following link. Feel free to delete this warning. :) http://truffleframework.com/tutorials/truffle-and-metamask")
+			web3js = new Web3(web3.currentProvider);
+		}
+		// Non-dapp browsers...
+		else {
+			console.log('Non-Ethereum browser detected. You should consider trying MetaMask!');
+			console.warn("No web3 detected. Falling back to http://localhost:8545. You should remove this fallback when you deploy live, as it's inherently insecure. Consider switching to Metamask for development. More info here: http://truffleframework.com/tutorials/truffle-and-metamask");
+			// fallback - use your fallback strategy (local node / hosted node + in-dapp id mgmt / fail)
+			web3js = new Web3(new Web3.providers.HttpProvider("http://localhost:8545"));
+		}
+
+
+      startApp()
+
+    })
+  </script>
+</body>
+
+</html>
